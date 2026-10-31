@@ -9,19 +9,61 @@
 
 ```mermaid
 flowchart TD
-  GitHub[GitHub: Source Code] --> Colab[Google Colab: PyTorch + GPU]
-  Drive[Google Drive: Dataset] --> Colab
-  Colab --> EDA[EDA: scripts/eda.py]
-  EDA --> Cleaning[Data Cleaning: scripts/clean.py]
-  Cleaning --> Split[Patient-Level Split: scripts/prepare.py]
-  Split --> Prep[Preprocessing: src/lesioscan/preprocessing.py]
-  Prep --> F[Feature Extraction: Stage 1]
-  F --> FT[Fine-Tuning: Stage 2]
-  FT --> V[Validation & Checkpoint]
-  V --> B[Benchmark antarmodel]
-  B --> T[Final Holdout Test]
-  T --> ONNX[Export ONNX]
-  ONNX --> Drive
+    A["GitHub Repository<br/>Source Code LesioScan"]
+    B[("Google Drive<br/>Dataset PAD-UFES-20")]
+    C["Google Colab<br/>PyTorch + GPU"]
+
+    A -->|"Clone Repository"| C
+    B -->|"Load Dataset"| C
+
+    subgraph PIPELINE["LESIOSCAN — MACHINE LEARNING PIPELINE"]
+        direction TB
+
+        D["1. Data Validation<br/>Pemeriksaan Metadata dan Gambar"]
+        E["2. Exploratory Data Analysis<br/>scripts/eda.py"]
+        F["3. Data Cleaning<br/>scripts/clean.py"]
+        G["4. Patient-Level Splitting<br/>scripts/prepare.py"]
+        H["5. Image Preprocessing<br/>src/lesioscan/preprocessing.py"]
+        I["6. Model Initialization<br/>src/lesioscan/models.py"]
+
+        J["7. Feature Extraction — Stage 1<br/>Freeze Backbone + Train Classifier"]
+        K["8. Fine-Tuning — Stage 2<br/>Unfreeze Backbone + Lower Learning Rate"]
+
+        L["9. Model Validation<br/>src/lesioscan/metrics.py"]
+        M["10. Model Benchmark<br/>scripts/benchmark.py"]
+        N["11. Final Holdout Test<br/>scripts/evaluate.py"]
+        O["12. Model Export<br/>scripts/export_onnx.py"]
+
+        D --> E
+        E --> F
+        F --> G
+        G --> H
+        H --> I
+        I --> J
+        J --> K
+        K --> L
+        L --> M
+        M --> N
+        N --> O
+    end
+
+    C --> D
+
+    P[("Google Drive<br/>Checkpoints, Reports, Model ONNX")]
+    Q["Aplikasi LesioScan<br/>Flutter + Model Inference"]
+
+    O -->|"Simpan Hasil"| P
+    P -.->|"Integrasi Model"| Q
+
+    classDef platform fill:#152238,stroke:#4A90E2,color:#FFFFFF
+    classDef data fill:#173B32,stroke:#36C995,color:#FFFFFF
+    classDef process fill:#25253D,stroke:#9292E8,color:#FFFFFF
+    classDef output fill:#47331D,stroke:#F0B35A,color:#FFFFFF
+
+    class A,C platform
+    class B,P data
+    class D,E,F,G,H,I,J,K,L,M,N,O process
+    class Q output
 ```
 
 ## Pembagian tanggung jawab
