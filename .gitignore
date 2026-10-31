@@ -1,0 +1,13 @@
+.venv/
+__pycache__/
+.pytest_cache/
+*.pyc
+data/images/
+data/raw/
+data/metadata.csv
+data/split.csv
+outputs/
+deployment/*.onnx
+*.pt
+*.ckpt
+.env
