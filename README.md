@@ -84,7 +84,7 @@ Colab typically includes CUDA-enabled PyTorch. Do **not** reinstall it unless ne
 %pip install 'timm>=1,<2' 'pandas>=2.1,<3' 'numpy>=1.26,<3' \
  'scikit-learn>=1.4,<2' 'Pillow>=10,<13' 'PyYAML>=6,<7' \
  'matplotlib>=3.8,<4' 'onnx>=1.16,<2' 'onnxruntime>=1.18,<2' \
- 'pytest>=8,<10' 'tqdm>=4.66,<5'
+ 'pytest>=8,<10' 'tqdm>=4.66,<5' 'jedi>=0.19,<1'
 ```
 
 Verify CUDA again after installation.
@@ -196,6 +196,13 @@ Output: `test_metrics.json`. Replace the checkpoint path if another model is sel
 
 Output: `deployment/model.onnx`, `deployment/labels.json`, and `deployment/preprocessing.json`. The export script verifies PyTorch-vs-ONNX numerical parity on a synthetic input. Confirm real-image parity and device latency before mobile integration.
 
+## Dokumentasi kode
+
+- [Arsitektur dan fungsi setiap file](docs/ARCHITECTURE.md).
+- [Urutan pengerjaan proyek](docs/WORKFLOW.md).
+- Seluruh instruksi Python, konfigurasi YAML, dan dependensi diberi komentar bahasa Indonesia.
+- Package internal yang digunakan secara konsisten: `lesioscan`.
+
 ## Repository structure
 
 ```text
@@ -205,7 +212,7 @@ lesioscan-ml/
 ├── scripts/train.py           # Transfer learning and checkpoints
 ├── scripts/evaluate.py        # Final holdout evaluation
 ├── scripts/export_onnx.py     # ONNX export and parity check
-├── src/dermascan/             # Legacy internal Python package
+├── src/lesioscan/             # Package Python LesioScan
 │   ├── config.py
 │   ├── data.py
 │   ├── models.py
@@ -219,7 +226,7 @@ lesioscan-ml/
 └── README.md
 ```
 
-**Naming note:** The GitHub repository is named **LesioScan**, but the importable internal Python package is still `dermascan` in the current source code. Rename it only after updating all Python imports and tests.
+**Package Python:** seluruh modul internal menggunakan nama `lesioscan` di `src/lesioscan/`.
 
 ## Engineering decisions
 
@@ -255,3 +262,4 @@ The current code **does not yet provide measured LesioScan accuracy**, medical v
 - [PyTorch](https://pytorch.org/)
 - [Google Colab](https://colab.research.google.com/)
 - [ONNX Runtime](https://onnxruntime.ai/)
+

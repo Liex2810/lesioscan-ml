@@ -1,13 +1,26 @@
+# Lingkungan virtual Python lokal.
 .venv/
+# Cache bytecode Python.
 __pycache__/
+# Cache hasil pytest.
 .pytest_cache/
+# Bytecode Python terkompilasi.
 *.pyc
+# Gambar dataset pada runtime.
 data/images/
+# Arsip atau data mentah.
 data/raw/
+# Metadata dataset asli.
 data/metadata.csv
+# Hasil pembagian pasien.
 data/split.csv
+# Keluaran eksperimen.
 outputs/
+# Model ONNX hasil ekspor.
 deployment/*.onnx
+# Bobot checkpoint PyTorch.
 *.pt
+# Checkpoint pelatihan.
 *.ckpt
+# Variabel lingkungan dan kredensial lokal.
 .env
