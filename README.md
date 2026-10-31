@@ -255,4 +255,3 @@ The current code **does not yet provide measured LesioScan accuracy**, medical v
 - [PyTorch](https://pytorch.org/)
 - [Google Colab](https://colab.research.google.com/)
 - [ONNX Runtime](https://onnxruntime.ai/)
-- [Benchmark project that inspired the workflow](https://github.com/muhwira27/skin-lesion-cnn-benchmark) — inspiration only; LesioScan is a separate implementation.
