@@ -1,182 +1,193 @@
 # LesioScan ML
 
-**Klasifikasi citra lesi kulit PAD-UFES-20 menggunakan PyTorch dan Google Colab.**
+**Pipeline klasifikasi citra lesi kulit PAD-UFES-20 berbasis PyTorch, Google Colab, dan Google Drive.**
 
-> **Penelitian dan edukasi saja.** Hasil model bukan diagnosis ataupun alat skrining kanker yang tervalidasi.
+> [!IMPORTANT]
+> **Untuk penelitian dan pendidikan, bukan diagnosis medis atau alat skrining kanker.** Keluaran model tidak menggantikan pemeriksaan tenaga kesehatan. Performa pada pasien/foto di luar data penelitian belum terbukti.
 
-## Arsitektur
+## Gambaran proyek
 
+LesioScan mempelajari klasifikasi enam kategori lesi kulit: **ACK, BCC, MEL, NEV, SCC, dan SEK**. Model utama adalah **ShuffleNet V2**, dengan **DenseNet-121** dan **ViT-Small** sebagai pembanding. Proses training menggunakan *transfer learning*: **feature extraction** (membekukan backbone) dilanjutkan **fine-tuning** (melatih backbone dengan learning rate lebih kecil).
+
+| Komponen | Peran |
+|---|---|
+| **GitHub** | Source code `.py`, konfigurasi, notebook `.ipynb`, dokumentasi, pengujian |
+| **Google Colab** | Menjalankan EDA, cleaning, training dengan GPU, benchmark dan evaluasi |
+| **Google Drive** | Menyimpan dataset asli, hasil EDA/cleaning, split, checkpoint, laporan dan ONNX |
+
+## 1. Arsitektur sistem
 
 ```mermaid
 flowchart TD
-    A["GitHub Repository<br/>Source Code LesioScan"]
-    B[("Google Drive<br/>Dataset PAD-UFES-20")]
-    C["Google Colab<br/>PyTorch + GPU"]
-
-    A -->|"Clone Repository"| C
-    B -->|"Load Dataset"| C
-
-    subgraph PIPELINE["LESIOSCAN — MACHINE LEARNING PIPELINE"]
-        direction TB
-
-        D["1. Data Validation<br/>Pemeriksaan Metadata dan Gambar"]
-        E["2. Exploratory Data Analysis<br/>scripts/eda.py"]
-        F["3. Data Cleaning<br/>scripts/clean.py"]
-        G["4. Patient-Level Splitting<br/>scripts/prepare.py"]
-        H["5. Image Preprocessing<br/>src/lesioscan/preprocessing.py"]
-        I["6. Model Initialization<br/>src/lesioscan/models.py"]
-
-        J["7. Feature Extraction — Stage 1<br/>Freeze Backbone + Train Classifier"]
-        K["8. Fine-Tuning — Stage 2<br/>Unfreeze Backbone + Lower Learning Rate"]
-
-        L["9. Model Validation<br/>src/lesioscan/metrics.py"]
-        M["10. Model Benchmark<br/>scripts/benchmark.py"]
-        N["11. Final Holdout Test<br/>scripts/evaluate.py"]
-        O["12. Model Export<br/>scripts/export_onnx.py"]
-
-        D --> E
-        E --> F
-        F --> G
-        G --> H
-        H --> I
-        I --> J
-        J --> K
-        K --> L
-        L --> M
-        M --> N
-        N --> O
-    end
-
-    C --> D
-
-    P[("Google Drive<br/>Checkpoints, Reports, Model ONNX")]
-    Q["Aplikasi LesioScan<br/>Flutter + Model Inference"]
-
-    O -->|"Simpan Hasil"| P
-    P -.->|"Integrasi Model"| Q
-
-    classDef platform fill:#152238,stroke:#4A90E2,color:#FFFFFF
-    classDef data fill:#173B32,stroke:#36C995,color:#FFFFFF
-    classDef process fill:#25253D,stroke:#9292E8,color:#FFFFFF
-    classDef output fill:#47331D,stroke:#F0B35A,color:#FFFFFF
-
-    class A,C platform
-    class B,P data
-    class D,E,F,G,H,I,J,K,L,M,N,O process
-    class Q output
+  GH["GitHub<br/>Kode + 4 Notebook"] -->|Clone| COLAB["Google Colab<br/>PyTorch + GPU"]
+  DIN[("Google Drive<br/>PAD-UFES-20")] -->|Baca dataset| COLAB
+  COLAB -->|Jalankan tahapan ML| PIPE["Data → Training → Evaluasi → ONNX"]
+  PIPE -->|Simpan hasil| DOUT[("Google Drive<br/>Hasil eksperimen + model")]
+  DOUT -.->|Artefak model untuk integrasi| APP["Flutter LesioScan<br/>Tahap aplikasi — belum selesai"]
 ```
 
-## Pembagian tanggung jawab
+**Kedua kotak Google Drive menunjukkan layanan yang sama:** satu menjelaskan input dataset, satu menjelaskan lokasi penyimpanan hasil. Diagram **tidak** menunjukkan dataset kembali diproses dari awal.
 
-| Komponen | Fungsi |
-|---|---|
-| GitHub | Menyimpan kode, konfigurasi, dokumentasi dan riwayat perubahan |
-| Google Colab | Menjalankan semua proses ML menggunakan Python/PyTorch dan GPU |
-| Google Drive | Menyimpan dataset, checkpoint dan file hasil ekspor |
+## 2. Arsitektur empat notebook Google Colab
 
-## Mulai di Google Colab
+Notebook merupakan **pengendali proses**, sedangkan logika utama disimpan dalam `scripts/` dan `src/lesioscan/`. Notebook **tidak harus berjalan bersamaan**. Setiap notebook menyimpan output ke Drive untuk dibaca notebook berikutnya.
 
-**1.** Aktifkan GPU pada Runtime -> Change runtime type, lalu mount Drive:
+```mermaid
+flowchart TD
+  RAW[("Google Drive<br/>Dataset mentah")]
+  N1["01_LesioScan_Data_Preparation.ipynb<br/>Validasi → EDA → Cleaning → Split"]
+  S1[("Drive: metadata_clean.csv<br/>split.csv + laporan EDA")]
+  N2["02_LesioScan_Model_Training.ipynb<br/>Preprocessing → Feature Extraction → Fine-Tuning"]
+  S2[("Drive: best.pt, history.json<br/>val_metrics.json untuk setiap model")]
+  N3["03_LesioScan_Benchmark.ipynb<br/>Bandingkan hasil validation tiga model"]
+  S3[("Drive: hasil benchmark<br/>model terpilih")]
+  N4["04_LesioScan_Evaluation.ipynb<br/>Final holdout test → ONNX export"]
+  S4[("Drive: test_metrics.json<br/>model.onnx, labels.json, preprocessing.json")]
 
-```python
-from google.colab import drive
-drive.mount('/content/drive')
+  RAW --> N1 --> S1 --> N2 --> S2 --> N3 --> S3 --> N4 --> S4
+  S2 -->|Checkpoint model terpilih| N4
 ```
 
-**2.** Clone GitHub dan masuk ke direktori proyek:
+> [!NOTE]
+> Panah antarnotebook berarti **ketergantungan input/output file di Google Drive**, bukan berbagi variabel atau satu runtime Colab. Pada notebook baru, lakukan mount Drive dan clone/pull repo lagi bila runtime baru.
 
-```python
-%cd /content
-!git clone https://github.com/Liex2810/lesioscan-ml.git
-%cd /content/lesioscan-ml
+### Peran dan urutan notebook
+
+| Urutan | Notebook | Input | Proses | Output utama |
+|---|---|---|---|---|
+| **01** | [`01_LesioScan_Data_Preparation.ipynb`](notebooks/01_LesioScan_Data_Preparation.ipynb) | PAD-UFES-20 dari Drive | Ekstraksi, validasi, EDA, cleaning, patient-level splitting | `metadata_clean.csv`, `split.csv`, grafik dan laporan |
+| **02** | [`02_LesioScan_Model_Training.ipynb`](notebooks/02_LesioScan_Model_Training.ipynb) | Gambar, metadata bersih, split | Preprocessing, feature extraction, fine-tuning; latih tiga model bila diperlukan | `best.pt`, `history.json`, `val_metrics.json` per model |
+| **03** | [`03_LesioScan_Benchmark.ipynb`](notebooks/03_LesioScan_Benchmark.ipynb) | Hasil validasi setiap model | Bandingkan Macro-F1, balanced accuracy dan recall | Tabel/grafik perbandingan, pilihan model |
+| **04** | [`04_LesioScan_Evaluation.ipynb`](notebooks/04_LesioScan_Evaluation.ipynb) | Model terpilih, test set yang belum dipakai untuk tuning | Evaluasi akhir, visualisasi, ekspor ONNX | `test_metrics.json`, `model.onnx`, `labels.json`, `preprocessing.json` |
+
+**Pengaturan runtime:** notebook **01 dan 03 dapat menggunakan CPU**; notebook **02 sebaiknya menggunakan GPU**; notebook **04 dapat menggunakan GPU** bila tersedia. Setiap notebook berisi setup lingkungan sendiri. Tidak diperlukan notebook `00_Setup.ipynb` sebagai prasyarat.
+
+## 3. Pipeline Machine Learning dan file yang bertanggung jawab
+
+```mermaid
+flowchart TD
+  A["Dataset mentah PAD-UFES-20"] --> B["Validasi awal + EDA<br/>scripts/eda.py"]
+  B --> C["Data Cleaning<br/>scripts/clean.py"]
+  C --> D["Patient-Level Split<br/>scripts/prepare.py"]
+  D --> E["Preprocessing & Augmentasi<br/>src/lesioscan/preprocessing.py"]
+  E --> F["Pretrained Backbone<br/>src/lesioscan/models.py"]
+  F --> G["Stage 1: Feature Extraction<br/>src/lesioscan/feature_extraction.py"]
+  G --> H["Stage 2: Fine-Tuning<br/>src/lesioscan/fine_tuning.py"]
+  H --> I["Validasi tiap epoch + checkpoint<br/>scripts/train.py + engine.py + metrics.py"]
+  I --> J["Benchmark antarmodel<br/>scripts/benchmark.py"]
+  J --> K["Final Evaluation<br/>scripts/evaluate.py"]
+  K --> L["ONNX Export<br/>scripts/export_onnx.py"]
 ```
 
-**3.** Periksa Torch (biasanya telah tersedia di Colab), lalu pasang library tambahan jika diperlukan.
+**Penting:** tahapan Stage 1 dan Stage 2 **otomatis dipanggil oleh `scripts/train.py`**, tidak dijalankan sebagai dua script terpisah. Validasi dilakukan selama kedua tahap, bukan hanya di akhir. Benchmark mengumpulkan **hasil validasi** antarmodel; test set hanya digunakan setelah model terpilih.
 
-```python
-import torch
-print(torch.__version__, torch.cuda.is_available())
-%pip install timm pandas scikit-learn pyyaml matplotlib pillow onnx onnxruntime tqdm pytest
+## 4. Struktur repository
+
+```text
+lesioscan-ml/
+├── configs/
+│   └── default.yaml                   # Lokasi data, label, hyperparameter
+├── data/
+│   └── README.md                      # Petunjuk data runtime (dataset jangan di-commit)
+├── notebooks/                         # Notebook yang dijalankan di Colab
+│   ├── 01_LesioScan_Data_Preparation.ipynb
+│   ├── 02_LesioScan_Model_Training.ipynb
+│   ├── 03_LesioScan_Benchmark.ipynb
+│   └── 04_LesioScan_Evaluation.ipynb
+├── scripts/                           # Titik masuk perintah (CLI)
+│   ├── eda.py                         # EDA
+│   ├── clean.py                       # Data cleaning
+│   ├── prepare.py                     # Split berdasarkan pasien
+│   ├── train.py                       # Feature extraction + fine-tuning
+│   ├── plot_training.py               # Grafik training
+│   ├── benchmark.py                   # Rekap perbandingan validasi
+│   ├── evaluate.py                    # Evaluasi final test
+│   ├── visualize_evaluation.py        # Visualisasi metrik
+│   ├── export_onnx.py                 # Ekspor dan cek ONNX
+│   ├── predict.py                     # Inferensi gambar (setelah model ada)
+│   └── benchmark_inference.py         # Pengukuran waktu inferensi
+├── src/lesioscan/                     # Implementasi fungsi yang digunakan scripts/
+│   ├── config.py
+│   ├── data.py
+│   ├── cleaning.py
+│   ├── splitting.py
+│   ├── preprocessing.py
+│   ├── models.py
+│   ├── feature_extraction.py
+│   ├── fine_tuning.py
+│   ├── engine.py
+│   ├── metrics.py
+│   └── inference.py
+├── tests/                             # Pengujian otomatis
+├── docs/                              # Dokumentasi metode dan hasil
+├── requirements.txt
+├── pytest.ini
+├── .gitignore
+└── README.md
 ```
 
-**4.** Simpan arsip PAD-UFES-20 ke `MyDrive/LesioScan-AI/datasets/PAD-UFES-20/`. Setelah download selesai, salin/ekstrak gambar ke `data/images/` dan metadata ke `data/metadata.csv` di runtime Colab. **Tahap upload dan ekstraksi belum otomatis pada repository ini.** Pastikan kolom `img_id`, `patient_id`, `diagnostic` tersedia.
+> Nama package yang digunakan adalah **`lesioscan`**, bukan `dermascan`. Struktur ini menjadi **target setelah versi source code dan keempat notebook terbaru di-push**. Periksa keberadaan file di branch `main` sebelum membuka tautan notebook.
 
-**5.** Jalankan pipeline secara berurutan (setelah dataset tersedia):
+## 5. Struktur Google Drive dan kontrak input/output
+
+```text
+MyDrive/LesioScan-AI/
+├── datasets/
+│   └── PAD-UFES-20/                  # Arsip gambar + metadata asli (input)
+├── experiments/
+│   ├── eda/                          # Hasil EDA notebook 01
+│   ├── cleaning/                     # Laporan cleaning notebook 01
+│   ├── splits/                       # metadata_clean.csv + split.csv notebook 01
+│   ├── training/                     # Grafik/rekaman training notebook 02
+│   ├── benchmark/                    # Perbandingan notebook 03
+│   └── evaluation/                   # Evaluasi notebook 04
+├── checkpoints/                       # best.pt + metrik masing-masing model
+└── models/                            # ONNX + metadata model final
+```
+
+**`/content/lesioscan-ml` adalah direktori kerja sementara Colab**. Dataset disalin/diekstrak ke `data/images/`; metadata berada di `data/metadata.csv`. Karena `/content` tidak persisten, notebook harus **mencadangkan output ke Drive** dan memulihkan input pada sesi berikutnya. Jangan melakukan `git add` pada gambar pasien, checkpoint, atau data sensitif.
+
+## 6. Cara menggunakan notebook dari GitHub
+
+1. **Push** keempat notebook dan kode Python terbaru ke branch `main` dalam folder yang ditunjukkan di atas.
+2. Buka [Google Colab](https://colab.research.google.com/) → **File → Open notebook → GitHub**, lalu cari repository `Liex2810/lesioscan-ml` dan pilih notebook **01**.
+3. Jalankan **setup di awal notebook 01** untuk mount Drive, clone/pull repo dan memeriksa dataset. Ikuti cell hingga hasil cleaning dan splitting tersimpan di Drive.
+4. Buka notebook **02** pada sesi berikutnya, baca `metadata_clean.csv` dan `split.csv` yang sama dari Drive, lalu train model. Simpan checkpoint **semua model yang dibandingkan**.
+5. Jalankan notebook **03** untuk memilih model berdasarkan **validasi**, lalu notebook **04** untuk **uji test set satu kali** dan ekspor ONNX.
+
+Setiap notebook harus dapat dijalankan **mandiri** dengan menjalankan cell setup-nya; **variabel Python dari notebook sebelumnya tidak dibagikan**. Jika notebook Colab diubah, simpan perubahan kembali ke GitHub agar versi kode tidak bercabang tanpa sengaja.
+
+### Perintah utama di dalam runtime Colab
+
+Dijalankan setelah `git clone`, instalasi dependency, dan dataset ditempatkan sesuai konfigurasi:
 
 ```bash
 python scripts/eda.py
 python scripts/clean.py
 python scripts/prepare.py
 python scripts/train.py --model shufflenet_v2_x1_0
-```
-
-Perintah EDA membuat ringkasan dan grafik di `outputs/eda/`. Training otomatis menjalankan **Stage 1 feature extraction** dan **Stage 2 fine-tuning**, kemudian menyimpan `outputs/runs/shufflenet_v2_x1_0/best.pt`. Simpan file hasil penting ke Google Drive sebelum runtime Colab berakhir.
-
-**6.** Jika ingin membandingkan model, gunakan `split.csv` **yang sama** untuk setiap arsitektur:
-
-```bash
 python scripts/train.py --model densenet121
 python scripts/train.py --model vit_small_patch16_224
+python scripts/benchmark.py
 ```
 
-**7.** Setelah memilih model berdasarkan validasi, lakukan evaluasi holdout satu kali dan ekspor:
+**Jangan** menjalankan final evaluation sebelum model terpilih. Argumen `--checkpoint` dan langkah ONNX dirinci di notebook **04**.
 
-```bash
-python scripts/evaluate.py --checkpoint outputs/runs/shufflenet_v2_x1_0/best.pt
-python scripts/export_onnx.py --checkpoint outputs/runs/shufflenet_v2_x1_0/best.pt
-```
+## 7. Validitas eksperimen dan keterbatasan
 
-## Peta file
+- **Pembagian berdasarkan `patient_id`** untuk mengurangi kebocoran gambar dari pasien sama. Periksa distribusi dan cakupan keenam kelas; kandidat split bukan jaminan stratifikasi sempurna.
+- **EDA deskriptif pada seluruh dataset** boleh dilakukan untuk audit, tetapi keputusan tuning, normalisasi yang dipelajari, dan pemilihan model harus memakai **training/validation**, bukan holdout test.
+- **Data cleaning tidak boleh menebak atau mengganti label diagnosis medis.** Simpan daftar data yang dikarantina untuk audit.
+- **Feature extraction dan fine-tuning** adalah dua tahap training; validasi memilih `best.pt` menggunakan macro-F1.
+- **Benchmark** hanya valid jika data split dan protokol eksperimen konsisten. Hasil aktual belum tersedia sebelum training.
+- **File ONNX bukan deployment lengkap.** Aplikasi Flutter, inferensi nyata pada perangkat, dan user testing masih memerlukan implementasi terpisah.
+- Hasil klasifikasi enam kelas **bukan probabilitas penyakit medis** dan tidak membuktikan keamanan penggunaan klinis.
 
-| Berkas | Peran |
-|---|---|
-| `configs/default.yaml` | Parameter dan lokasi data |
-| `scripts/eda.py` | Statistik metadata, kelas, pasien, dimensi dan pemeriksaan gambar |
-| `scripts/clean.py` | Membersihkan metadata secara konservatif, mengarantina baris bermasalah, dan menghasilkan laporan audit tanpa mengubah data asli |
-| `src/lesioscan/cleaning.py` | Pemeriksaan label, ID pasien, duplikasi, keberadaan/kerusakan gambar |
-| `scripts/prepare.py` | Membuat `data/split.csv` tanpa pasien yang bocor antarsplit |
-| `src/lesioscan/preprocessing.py` | Transformasi train vs validasi/test |
-| `src/lesioscan/data.py` | Dataset, DataLoader, patient-level split dan validasi metadata |
-| `src/lesioscan/models.py` | ShuffleNet V2, DenseNet-121, ViT-Small |
-| `src/lesioscan/feature_extraction.py` | Membekukan backbone untuk Stage 1 |
-| `src/lesioscan/fine_tuning.py` | Membuka semua parameter untuk Stage 2 |
-| `src/lesioscan/engine.py` | Forward pass, loss, backward, optimizer, validasi |
-| `src/lesioscan/metrics.py` | Macro-F1, balanced accuracy, recall per kelas |
-| `scripts/train.py` | Mengorkestrasi kedua tahap training dan menyimpan checkpoint |
-| `scripts/evaluate.py` | Evaluasi akhir di holdout test |
-| `scripts/export_onnx.py` | Ekspor model + pemeriksaan kesetaraan ONNX/PyTorch |
+## 8. Referensi
 
-## Batasan saat ini
+- [Dataset PAD-UFES-20](https://data.mendeley.com/datasets/zr7vgbcyr2/1)
+- [PyTorch](https://pytorch.org/)
+- [Google Colab](https://colab.research.google.com/)
+- [ONNX Runtime](https://onnxruntime.ai/)
 
-- **EDA tidak boleh digunakan untuk menyesuaikan keputusan model berdasarkan data test.** Analisis eksplorasi awal boleh mendeskripsikan data keseluruhan; keputusan yang dipelajari dari data menggunakan train saja.
-- Split memakai `GroupShuffleSplit`, **belum stratified group split** dan belum 5-fold CV. Periksa kecukupan kelas di setiap split.
-- Evaluasi benchmark otomatis, inference gambar baru, dan integrasi Flutter **belum tersedia**.
-- Checkpoint masih hanya menyimpan model terpilih, bukan semua keadaan optimizer untuk melanjutkan training dengan presisi.
-- Softmax bukan probabilitas medis, dan prediksi pada foto di luar distribusi training tidak bisa diandalkan.
-
-Dataset: https://data.mendeley.com/datasets/zr7vgbcyr2/1
-
-
-## Persiapan penilaian rubrik
-
-- **Perumusan masalah:** `docs/01_problem_formulation.md`.
-- **EDA:** `notebooks/01_exploratory_data_analysis.ipynb` dan `scripts/eda.py`.
-- **Split kelas-aware berdasarkan pasien:** `src/lesioscan/splitting.py`, `scripts/prepare.py` (mencari kandidat group split dengan cakupan kelas). Bukan jaminan stratifikasi sempurna.
-- **Benchmark:** `python scripts/benchmark.py` (membandingkan **validation metrics**, tidak pernah memilih berdasarkan test).
-- **Grafik training:** `python scripts/plot_training.py --history outputs/runs/<run>/history.json`.
-- **Grafik evaluasi:** `python scripts/visualize_evaluation.py --metrics outputs/runs/<run>/val_metrics.json`.
-- **Inference eksperimen:** `python scripts/predict.py --checkpoint outputs/runs/<run>/best.pt --image <path_gambar>`. **Hanya penelitian, bukan diagnosis.**
-- **Benchmark latency:** `python scripts/benchmark_inference.py --checkpoint outputs/runs/<run>/best.pt --device cpu`.
-- **Dokumentasi metodologi:** `docs/04_model_evaluation.md`, `docs/05_experiment_protocol.md`, `docs/06_eda_interpretation.md`.
-
-Seluruh script evaluasi dan benchmark memerlukan output training yang **belum tersedia** sebelum dataset diunduh, disiapkan, dan model dilatih.
-
-## Tahap Data Cleaning (sebelum data split)
-
-1. Simpan metadata asli di `data/metadata.csv` dan gambar asli di `data/images/` setelah staging dari Google Drive. Jangan ubah data asli.
-2. Jalankan `python scripts/eda.py` untuk melihat karakteristik dan masalah data.
-3. Jalankan `python scripts/clean.py`; outputnya `data/metadata_clean.csv`, `outputs/cleaning/cleaning_issues.csv`, dan `outputs/cleaning/cleaning_summary.json`.
-4. **Tinjau laporan cleaning**: kolom wajib kosong, label tidak dikenal, konflik image ID, duplikasi, gambar hilang/rusak, dan path tidak aman. Baris bermasalah dikarantina; kode **tidak mengarang label klinis** atau memperbaiki gambar otomatis.
-5. Bila temuan sudah ditinjau, jalankan `python scripts/prepare.py`. Script ini membaca **metadata_clean.csv**. Simpan laporan dan split ke Google Drive.
-
-Cleaning *bukan* augmentation maupun normalisasi. Transformasi training (resize, normalisasi ImageNet, augmentation) dilakukan setelah splitting, sehingga tidak menyebabkan kebocoran data. Ambiguitas label memerlukan peninjauan manual berdasarkan sumber terpercaya.
+**Status:** dokumentasi dan notebook disiapkan; keberhasilan pipeline pada dataset asli, hasil benchmark, dan aplikasi belum dikonfirmasi.
