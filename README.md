@@ -1,146 +1,258 @@
-# DermaScan ML — PAD-UFES-20 Research Prototype
+# LesioScan ML
 
-A **new, independent** PyTorch repository for patient-disjoint skin-lesion classification using **ShuffleNet V2**, **DenseNet-121**, and **ViT-Small**. Designed to start locally on an **RTX 3060 Laptop GPU (typically 6 GB VRAM)**.
+**Deep learning research prototype for smartphone-based skin lesion image classification.**
 
-> **Research/education only. NOT a medical diagnosis, screening device, or proof that a lesion is benign.** Performance on new patients is unverified. Report sensitivity for MEL, BCC and SCC; do not deploy for clinical use without external validation and appropriate oversight.
+![Python](https://img.shields.io/badge/Python-3.11-blue) ![PyTorch](https://img.shields.io/badge/Framework-PyTorch-orange) ![Platform](https://img.shields.io/badge/Training-Google%20Colab-yellow) ![Status](https://img.shields.io/badge/Status-Research%20Prototype-lightgrey)
 
-## Architecture
+> [!IMPORTANT]
+> **Research and education only.** LesioScan is **not** a validated cancer screening or diagnostic tool. Predictions and softmax scores cannot determine whether a lesion is safe or malignant. Clinical use requires appropriate independent validation and oversight.
+
+## About the project
+
+LesioScan explores transfer learning on **PAD-UFES-20** for six lesion categories: `ACK`, `BCC`, `MEL`, `NEV`, `SCC`, `SEK`. The initial objective is to train **ShuffleNet V2** and obtain a reproducible checkpoint. **DenseNet-121** and **ViT-Small** serve as comparison architectures in later experiments.
+
+| Component | Technology |
+| --- | --- |
+| Dataset | [PAD-UFES-20](https://data.mendeley.com/datasets/zr7vgbcyr2/1) |
+| Deep learning | PyTorch, Torchvision, timm |
+| Training | Google Colab GPU |
+| Persistent files | Google Drive |
+| Evaluation | Validation macro-F1, balanced accuracy, per-class recall |
+| Export | ONNX |
+
+## Machine learning pipeline
 
 ```mermaid
 flowchart TD
-  A[PAD-UFES-20 images + metadata] --> B[Validate labels, IDs, missing files]
-  B --> C[Patient-disjoint train / validation / holdout test]
-  C --> D[Training images + augmentations]
-  D --> E[Pretrained backbone]
-  E --> F[Stage 1: train classification head]
-  F --> G[Stage 2: fine-tune backbone]
-  G --> H[Validation macro-F1 / class recall]
-  H --> I[Save best checkpoint]
-  I --> J[One-time holdout test]
-  J --> K[Export ONNX]
-  K --> L[ONNX vs PyTorch parity test]
-  L --> M[model.onnx + labels.json + preprocessing.json]
+    A[PAD-UFES-20 images and metadata] --> B[Validate files and patient IDs]
+    B --> C[Patient-disjoint train/val/test split]
+    C --> D[DataLoader and train-only augmentations]
+    D --> E[Pretrained ShuffleNet V2]
+    E --> F[Train classifier head]
+    F --> G[Fine-tune backbone]
+    G --> H[Validation: macro-F1 and class recalls]
+    H --> I[Save best.pt]
+    I --> J[Model comparison using validation data]
+    J --> K[Final holdout evaluation]
+    K --> L[ONNX export and parity check]
 ```
 
-## 0. Install (Windows PowerShell, from repository root)
+## Google Colab quick start
 
-1. Install Python 3.10/3.11, Git, latest compatible NVIDIA driver.
-2. Create venv:
+### 1 — Activate GPU
 
-```powershell
-py -3.11 -m venv .venv
-.\.venv\Scripts\Activate.ps1
-python -m pip install --upgrade pip
+Open [Google Colab](https://colab.research.google.com/), create a notebook, then select **Runtime → Change runtime type → GPU** (T4 if available). Availability depends on Colab allocation.
+
+```python
+import torch
+print('PyTorch:', torch.__version__)
+print('CUDA available:', torch.cuda.is_available())
+if torch.cuda.is_available():
+    print('GPU:', torch.cuda.get_device_name(0))
 ```
 
-3. Get the correct **CUDA-enabled PyTorch/torchvision** installer from https://pytorch.org/get-started/locally/ and install it; then:
+### 2 — Mount Google Drive
 
-```powershell
-pip install -r requirements.txt
-python -c "import torch; print(torch.cuda.is_available()); print(torch.cuda.get_device_name(0) if torch.cuda.is_available() else 'CPU')"
-pytest -q
+```python
+from google.colab import drive
+from pathlib import Path
+
+drive.mount('/content/drive')
+DRIVE_ROOT = Path('/content/drive/MyDrive/LesioScan-AI')
+for name in ['datasets', 'checkpoints', 'experiments', 'models']:
+    (DRIVE_ROOT / name).mkdir(parents=True, exist_ok=True)
 ```
 
-`requirements.txt` includes PyTorch for environment reproducibility; a previously installed compatible CUDA wheel should be retained. Check CUDA after dependency installation. If `False`, revisit PyTorch installation/driver. CUDA Toolkit is not always required separately for pip wheel use.
+Keep the original dataset in `MyDrive/LesioScan-AI/datasets/PAD-UFES-20/`, and save checkpoints to `MyDrive/LesioScan-AI/checkpoints/`. Files in `/content` can disappear when Colab disconnects.
 
-## 1. Prepare dataset
+### 3 — Clone the code
 
-Official source: https://data.mendeley.com/datasets/zr7vgbcyr2/1
-
-Place image files in `data/images/` and create `data/metadata.csv` with at least:
-
-```csv
-img_id,patient_id,diagnostic
-PAT_001_001.png,001,MEL
-PAT_002_001.png,002,NEV
+```python
+%cd /content
+!git clone https://github.com/Liex2810/lesioscan-ml.git
+%cd /content/lesioscan-ml
+!ls
 ```
 
-*Example rows only, not real PAD-UFES-20 filenames.* `img_id` must be an image filename (including extension). Original PAD-UFES-20 metadata uses these key columns, but confirm the actual archive paths. Do not commit patient data or pictures.
+If you already cloned the repository in this runtime, skip the `git clone` line. **Use `/content/lesioscan-ml` as your working directory**, not the Google Drive folder.
 
-```powershell
-python scripts/prepare.py
+### 4 — Install dependencies
+
+Colab typically includes CUDA-enabled PyTorch. Do **not** reinstall it unless needed. Install remaining requirements:
+
+```python
+%pip install 'timm>=1,<2' 'pandas>=2.1,<3' 'numpy>=1.26,<3' \
+ 'scikit-learn>=1.4,<2' 'Pillow>=10,<13' 'PyYAML>=6,<7' \
+ 'matplotlib>=3.8,<4' 'onnx>=1.16,<2' 'onnxruntime>=1.18,<2' \
+ 'pytest>=8,<10' 'tqdm>=4.66,<5'
 ```
 
-Output: `data/split.csv`. It uses patient groups, but `GroupShuffleSplit` is **not stratified by class**, so inspect counts and repeat with another seed if a rare class is absent. If that happens, a better group-stratified split implementation is needed; never use image-level random split to fix it.
+Verify CUDA again after installation.
 
-## 2. Train (start with one model)
+### 5 — Prepare PAD-UFES-20
 
-```powershell
-python scripts/train.py --model shufflenet_v2_x1_0
-```
-
-Other options:
-
-```powershell
-python scripts/train.py --model densenet121
-python scripts/train.py --model vit_small_patch16_224
-```
-
-Results are stored at `outputs/runs/<model>/best.pt`, `history.json`, and `val_metrics.json`. The default batch is **8** to be conservative on a 6 GB RTX 3060. The default Windows-safe number of DataLoader workers is **0**. Increase gradually after a successful smoke test. ViT pretrained weights require download on first run.
-
-**Warning:** Running the same model again overwrites that model's run directory unless you pass `--run my_experiment_name`. Record config/seed for each run.
-
-## 3. Validate and compare
-
-Selection should use validation results (`val_metrics.json`) and especially MEL/BCC/SCC recall. The supplied baseline only implements **one patient-disjoint train/validation/test split**, not the full 5-fold CV research design. Do **not** describe this repository as already doing cross-validation. For a stronger study, add group-aware CV on the development set and reserve a separate holdout test.
-
-## 4. One-time holdout test
-
-After model selection (and freezing the protocol):
-
-```powershell
-python scripts/evaluate.py --checkpoint outputs/runs/shufflenet_v2_x1_0/best.pt
-```
-
-Output: `test_metrics.json` with macro-F1, balanced accuracy, confusion matrix and per-class recall. The holdout test should not be repeatedly used for tuning.
-
-## 5. Export ONNX
-
-```powershell
-python scripts/export_onnx.py --checkpoint outputs/runs/shufflenet_v2_x1_0/best.pt
-```
-
-Output:
+Download from [the official dataset page](https://data.mendeley.com/datasets/zr7vgbcyr2/1). Upload the original files to Google Drive, then copy or extract **images into the runtime** using this required layout:
 
 ```text
-deployment/
-  model.onnx
-  labels.json
-  preprocessing.json
+/content/lesioscan-ml/data/
+├── metadata.csv
+└── images/
+    ├── <image from dataset>
+    └── ...
 ```
 
-The ONNX graph returns **logits**, not softmax probabilities. Clients must apply softmax and use the exact class order and preprocessing. The script checks ONNX-vs-PyTorch output parity on a random tensor; before shipping, add parity tests using actual validation images and profile device latency/memory.
+Metadata must contain columns `img_id`, `patient_id`, and `diagnostic`. Every value in `img_id` must match an existing image filename, including its extension. Archive layouts vary; inspect the downloaded files before extracting.
 
-## Directory map
+Verify:
 
-| Path | Purpose |
+```python
+from pathlib import Path
+import pandas as pd
+root = Path('/content/lesioscan-ml/data')
+df = pd.read_csv(root / 'metadata.csv')
+required = {'img_id', 'patient_id', 'diagnostic'}
+assert required.issubset(df.columns), required - set(df.columns)
+missing = [n for n in df.img_id.astype(str) if not (root / 'images' / n).is_file()]
+print('Images referenced:', len(df), 'Missing:', len(missing))
+print(df.diagnostic.value_counts())
+assert not missing, 'Fix image paths before continuing.'
+```
+
+**Do not upload raw patient data or personal lesion photos to GitHub.**
+
+### 6 — Create patient-disjoint splits
+
+```python
+%cd /content/lesioscan-ml
+!python scripts/prepare.py
+```
+
+Output: `data/split.csv`. This starter uses `GroupShuffleSplit`, **not stratified group splitting**, so examine the reported class counts. It is a single train/validation/test split, **not 5-fold cross-validation**.
+
+Persist the split:
+
+```python
+import shutil
+shutil.copy2('data/split.csv', '/content/drive/MyDrive/LesioScan-AI/experiments/split.csv')
+```
+
+On future sessions, restore the same split; do not reshuffle the dataset when comparing models.
+
+### 7 — Train ShuffleNet V2
+
+```python
+!python scripts/train.py --model shufflenet_v2_x1_0 --run shufflenet_baseline
+```
+
+The initial settings are in `configs/default.yaml`: 224×224 images, batch size 8, 5 classifier-head epochs, 20 fine-tuning epochs, AdamW, and mixed precision if CUDA is available. These are starting configurations, **not tuned best values**.
+
+Outputs:
+
+```text
+outputs/runs/shufflenet_baseline/
+├── best.pt
+├── history.json
+└── val_metrics.json
+```
+
+Immediately back up the run directory to Drive:
+
+```python
+shutil.copytree(
+    'outputs/runs/shufflenet_baseline',
+    '/content/drive/MyDrive/LesioScan-AI/checkpoints/shufflenet_baseline',
+    dirs_exist_ok=True,
+)
+```
+
+**Caution:** The starter saves the best model parameters but does not save the full optimizer state for seamless mid-training resumption after a Colab disconnect.
+
+### 8 — Compare further models (optional)
+
+```python
+!python scripts/train.py --model densenet121 --run densenet_baseline
+!python scripts/train.py --model vit_small_patch16_224 --run vit_baseline
+```
+
+Compare the **validation** macro-F1 and class recalls, particularly MEL, BCC, and SCC. Do not select models based on test metrics.
+
+### 9 — One-time final test
+
+After choosing a model and freezing your experiment protocol:
+
+```python
+!python scripts/evaluate.py --checkpoint outputs/runs/shufflenet_baseline/best.pt
+```
+
+Output: `test_metrics.json`. Replace the checkpoint path if another model is selected.
+
+### 10 — Export ONNX
+
+```python
+!python scripts/export_onnx.py \
+  --checkpoint outputs/runs/shufflenet_baseline/best.pt \
+  --out deployment/model.onnx
+```
+
+Output: `deployment/model.onnx`, `deployment/labels.json`, and `deployment/preprocessing.json`. The export script verifies PyTorch-vs-ONNX numerical parity on a synthetic input. Confirm real-image parity and device latency before mobile integration.
+
+## Repository structure
+
+```text
+lesioscan-ml/
+├── configs/default.yaml       # Training and dataset configuration
+├── scripts/prepare.py         # Patient-disjoint split
+├── scripts/train.py           # Transfer learning and checkpoints
+├── scripts/evaluate.py        # Final holdout evaluation
+├── scripts/export_onnx.py     # ONNX export and parity check
+├── src/dermascan/             # Legacy internal Python package
+│   ├── config.py
+│   ├── data.py
+│   ├── models.py
+│   ├── engine.py
+│   └── metrics.py
+├── data/                      # Dataset: not committed to GitHub
+├── outputs/                   # Checkpoints: not committed
+├── docs/
+├── tests/
+├── requirements.txt
+└── README.md
+```
+
+**Naming note:** The GitHub repository is named **LesioScan**, but the importable internal Python package is still `dermascan` in the current source code. Rename it only after updating all Python imports and tests.
+
+## Engineering decisions
+
+| Choice | Why |
 | --- | --- |
-| `configs/default.yaml` | Experiment parameters, labels, paths |
-| `src/dermascan/data.py` | Patient split, transforms, PyTorch Dataset/Dataloader |
-| `src/dermascan/models.py` | Three pretrained backbones + 6-class head |
-| `src/dermascan/engine.py` | Training/validation loop, AMP, checkpoint metrics |
-| `src/dermascan/metrics.py` | Classification metrics |
-| `scripts/prepare.py` | Data validation and split creation |
-| `scripts/train.py` | Two-stage transfer learning |
-| `scripts/evaluate.py` | One-time final test |
-| `scripts/export_onnx.py` | ONNX + numerical parity check |
-| `tests/` | Automated unit tests |
+| Google Colab over local CUDA | GPU training without a large installation on a 4 GB VRAM laptop; sessions are temporary. |
+| GitHub + Google Drive | GitHub tracks code revisions; Drive persists datasets and checkpoints. |
+| PyTorch | The existing models and training code already use Torchvision/timm. |
+| Patient-level split | Reduces same-patient information leakage across splits. |
+| Transfer learning | Better starting point on a relatively small dataset than training all features from random initialization. |
+| Macro-F1 + per-class recall | Accuracy alone can conceal rare-class errors. |
+| ONNX | Portable inference format for later app integration. |
 
-## Design trade-offs
+## Research limitations and roadmap
 
-- **PyTorch over rewriting in TensorFlow:** supports torchvision and timm backbones and stays aligned with the benchmark repository's model family.
-- **Patient-level split over random image split:** avoids same-patient leakage.
-- **Transfer learning over scratch:** PAD-UFES-20 is small; pretrained image features reduce data demands.
-- **Macro-F1 over plain accuracy:** class imbalance can hide rare-lesion failures. Always inspect per-class recall.
-- **Head-training then fine-tuning:** adapt new classifier before changing pretrained representations.
-- **ONNX over directly bundling Python:** model can run in an optimized non-Python environment; mobile integration is a separate engineering task.
+- [x] Three backbone architectures supported
+- [x] Single patient-disjoint split
+- [x] Two-stage transfer learning and validation metrics
+- [x] Checkpoint output and ONNX export
+- [ ] CLI to predict arbitrary new images (`scripts/predict.py`)
+- [ ] Patient-aware 5-fold cross-validation
+- [ ] Structured external validation and error analysis
+- [ ] Grad-CAM / other explainability methods
+- [ ] Uncertainty assessment and model calibration
+- [ ] Flutter deployment and mobile inference testing
 
-## Limitations / next research steps
+The current code **does not yet provide measured LesioScan accuracy**, medical validation, or a finished image prediction CLI. Results from third-party repositories must not be presented as outcomes of this codebase.
 
-- This starter does not yet implement 5-fold cross-validation, Grad-CAM, probabilistic calibration, out-of-distribution rejection, or an external test set. These are recommended **before** asserting generalization or using a model in health-facing software.
-- One `GroupShuffleSplit` is not group-stratified; minority classes can be sparse or missing.
-- Output accuracy is not established before you run training. Never reuse README scores from another repo as your own.
-- Do not treat the six-class softmax maximum as a probability of cancer, nor assume photos outside these six classes can be safely classified.
-- Dataset license and clinical claims should be reviewed independently.
+## References
 
-Reference inspiration (no code copied): https://github.com/muhwira27/skin-lesion-cnn-benchmark
+- [PAD-UFES-20 original dataset](https://data.mendeley.com/datasets/zr7vgbcyr2/1)
+- [PAD-UFES-20 repository](https://github.com/labcin-ufes/PAD-UFES-20)
+- [PyTorch](https://pytorch.org/)
+- [Google Colab](https://colab.research.google.com/)
+- [ONNX Runtime](https://onnxruntime.ai/)
+- [Benchmark project that inspired the workflow](https://github.com/muhwira27/skin-lesion-cnn-benchmark) — inspiration only; LesioScan is a separate implementation.
