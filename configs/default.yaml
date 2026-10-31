@@ -1,27 +1,27 @@
-seed: 42  # Seed generator acak.
-data:  # Kelompok pengaturan dataset.
-  csv: data/metadata.csv  # Path metadata asli.
-  images: data/images  # Folder gambar.
-  split: data/split.csv  # Path CSV pembagian data.
-  image_column: img_id  # Kolom nama file gambar.
-  patient_column: patient_id  # Kolom identitas pasien untuk mencegah kebocoran data.
-  label_column: diagnostic  # Kolom kelas target.
-  holdout_fraction: 0.15  # Fraksi kelompok pasien untuk test.
-  validation_fraction: 0.15  # Fraksi kelompok pasien validasi terhadap keseluruhan.
-  image_size: 224  # Ukuran sisi gambar masukan dalam piksel.
-labels: [ACK, BCC, MEL, NEV, SCC, SEK]  # Urutan indeks enam kelas; pertahankan saat deployment.
-train:  # Kelompok pengaturan training.
-  batch_size: 8  # Jumlah gambar per batch.
-  num_workers: 0  # Jumlah proses pembaca data tambahan; nol untuk awal.
-  stage1_epochs: 5  # Batas epoch pelatihan kepala klasifikasi.
-  stage2_epochs: 20  # Batas epoch fine-tuning seluruh model.
-  head_lr: 0.001  # Learning rate kepala klasifikasi.
-  finetune_lr: 0.00003  # Learning rate fine-tuning backbone.
-  weight_decay: 0.01  # Regularisasi bobot pada AdamW.
-  patience: 6  # Batas epoch tanpa perbaikan validasi.
-  amp: true  # Aktifkan mixed precision pada CUDA.
-  sampler: weighted  # Weighted menyeimbangkan peluang sampling kelas pada train.
-  pretrained: true  # Gunakan bobot pretrained saat training.
-model:  # Kelompok pengaturan arsitektur.
-  name: shufflenet_v2_x1_0  # Arsitektur awal yang dipilih.
-outputs: outputs  # Folder hasil relatif terhadap direktori kerja.
+seed: 42
+data:
+  csv: data/metadata.csv
+  images: data/images
+  split: data/split.csv
+  image_column: img_id
+  patient_column: patient_id
+  label_column: diagnostic
+  holdout_fraction: 0.15
+  validation_fraction: 0.15
+  image_size: 224
+labels: [ACK, BCC, MEL, NEV, SCC, SEK]
+train:
+  batch_size: 8
+  num_workers: 0  # Windows-safe initial setting; increase after testing
+  stage1_epochs: 5
+  stage2_epochs: 20
+  head_lr: 0.001
+  finetune_lr: 0.00003
+  weight_decay: 0.01
+  patience: 6
+  amp: true
+  sampler: weighted  # weighted or random
+  pretrained: true
+model:
+  name: shufflenet_v2_x1_0
+outputs: outputs
