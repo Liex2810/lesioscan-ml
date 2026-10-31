@@ -3,31 +3,18 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 from PIL import Image, ImageFile
-from sklearn.model_selection import GroupShuffleSplit
 import torch
 from torch.utils.data import Dataset, DataLoader, WeightedRandomSampler
 from .preprocessing import build_transforms
 
 
-def split_metadata(frame, patient_col='patient_id', label_col='diagnostic', holdout=0.15, val=0.15, seed=42):
-    if not 0 < holdout < 1 or not 0 < val < 1 or holdout + val >= 1:
-        raise ValueError('holdout and val must be positive and sum to <1')
-    df = frame.dropna(subset=[patient_col, label_col]).copy().reset_index(drop=True)
-    if df.empty:
-        raise ValueError('No valid rows')
-    df[patient_col] = df[patient_col].astype(str)
-    first = GroupShuffleSplit(n_splits=1, test_size=holdout, random_state=seed)
-    remain_idx, test_idx = next(first.split(df, groups=df[patient_col]))
-    remain = df.iloc[remain_idx].copy()
-    second = GroupShuffleSplit(n_splits=1, test_size=val / (1 - holdout), random_state=seed + 1)
-    train_idx, valid_idx = next(second.split(remain, groups=remain[patient_col]))
-    df['split'] = 'test'
-    df.loc[remain.iloc[train_idx].index, 'split'] = 'train'
-    df.loc[remain.iloc[valid_idx].index, 'split'] = 'val'
-    groups = [set(df.loc[df.split == s, patient_col]) for s in ('train', 'val', 'test')]
-    if any(groups[i] & groups[j] for i in range(3) for j in range(i+1, 3)):
-        raise RuntimeError('Patient leakage detected')
-    return df
+from .splitting import stratified_patient_split
+
+
+def split_metadata(frame, patient_col='patient_id', label_col='diagnostic', holdout=0.15,
+                   val=0.15, seed=42, n_candidates=150):
+    return stratified_patient_split(frame, patient_col=patient_col, label_col=label_col,
+                                    holdout=holdout, val=val, seed=seed, n_candidates=n_candidates)
 
 
 def augmentations(size, training=False):

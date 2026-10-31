@@ -25,7 +25,7 @@ def main():
     root = Path(d['images'])
     out = Path(args.out)
     out.mkdir(parents=True, exist_ok=True)
-    df = pd.read_csv(d['csv'])
+    df = pd.read_csv(d.get('raw_csv', d['csv']))
     image_col, patient_col, label_col = d['image_column'], d['patient_column'], d['label_column']
     required = {image_col, patient_col, label_col}
     if not required.issubset(df.columns):

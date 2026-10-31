@@ -11,8 +11,11 @@ ap.add_argument('--config', default='configs/default.yaml')
 a = ap.parse_args()
 cfg = read_config(a.config)
 d = cfg['data']
-frame = validate_metadata(pd.read_csv(d['csv']), cfg)
-out = split_metadata(frame, d['patient_column'], d['label_column'], d['holdout_fraction'], d['validation_fraction'], cfg['seed'])
+clean_path = Path(d['csv'])
+if not clean_path.is_file():
+    raise FileNotFoundError(f'Jalankan scripts/clean.py terlebih dahulu: {clean_path}')
+frame = validate_metadata(pd.read_csv(clean_path), cfg)
+out = split_metadata(frame, d['patient_column'], d['label_column'], d['holdout_fraction'], d['validation_fraction'], cfg['seed'], n_candidates=d.get('split_candidates', 150))
 for label in cfg['labels']:
     print(label, {s: int(((out['split'] == s) & (out[d['label_column']] == label)).sum()) for s in ('train', 'val', 'test')})
 if any(not (out['split'] == s).any() for s in ('train', 'val', 'test')):
@@ -20,4 +23,8 @@ if any(not (out['split'] == s).any() for s in ('train', 'val', 'test')):
 path = Path(d['split']); path.parent.mkdir(parents=True, exist_ok=True)
 out.to_csv(path, index=False)
 print('Saved:', path, 'Rows:', len(out))
-print('NOTE: Check class coverage. GroupShuffleSplit is not class-stratified.')
+print('Selected class-aware candidate with patient-disjoint groups; check count table above.')
+
+summary = out.groupby(['split', d['label_column']]).size().unstack(fill_value=0)
+summary.to_csv(path.parent / 'split_distribution.csv')
+print('Saved:', path.parent / 'split_distribution.csv')

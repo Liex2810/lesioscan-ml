@@ -1,6 +1,5 @@
 import torch.nn as nn
 import torchvision.models as tv
-import timm
 
 ALLOWED = ('shufflenet_v2_x1_0', 'densenet121', 'vit_small_patch16_224')
 
@@ -12,6 +11,7 @@ def build(name, n_classes=6, pretrained=True):
         m = tv.densenet121(weights=tv.DenseNet121_Weights.DEFAULT if pretrained else None)
         m.classifier = nn.Linear(m.classifier.in_features, n_classes)
     elif name == 'vit_small_patch16_224':
+        import timm
         m = timm.create_model('vit_small_patch16_224', pretrained=pretrained, num_classes=n_classes)
     else:
         raise ValueError(f'Unknown model {name}; choose {ALLOWED}')

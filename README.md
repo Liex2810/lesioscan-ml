@@ -12,7 +12,8 @@ flowchart TD
   GitHub[GitHub: Source Code] --> Colab[Google Colab: PyTorch + GPU]
   Drive[Google Drive: Dataset] --> Colab
   Colab --> EDA[EDA: scripts/eda.py]
-  EDA --> Split[Patient-Level Split: scripts/prepare.py]
+  EDA --> Cleaning[Data Cleaning: scripts/clean.py]
+  Cleaning --> Split[Patient-Level Split: scripts/prepare.py]
   Split --> Prep[Preprocessing: src/lesioscan/preprocessing.py]
   Prep --> F[Feature Extraction: Stage 1]
   F --> FT[Fine-Tuning: Stage 2]
@@ -62,6 +63,7 @@ print(torch.__version__, torch.cuda.is_available())
 
 ```bash
 python scripts/eda.py
+python scripts/clean.py
 python scripts/prepare.py
 python scripts/train.py --model shufflenet_v2_x1_0
 ```
@@ -88,6 +90,8 @@ python scripts/export_onnx.py --checkpoint outputs/runs/shufflenet_v2_x1_0/best.
 |---|---|
 | `configs/default.yaml` | Parameter dan lokasi data |
 | `scripts/eda.py` | Statistik metadata, kelas, pasien, dimensi dan pemeriksaan gambar |
+| `scripts/clean.py` | Membersihkan metadata secara konservatif, mengarantina baris bermasalah, dan menghasilkan laporan audit tanpa mengubah data asli |
+| `src/lesioscan/cleaning.py` | Pemeriksaan label, ID pasien, duplikasi, keberadaan/kerusakan gambar |
 | `scripts/prepare.py` | Membuat `data/split.csv` tanpa pasien yang bocor antarsplit |
 | `src/lesioscan/preprocessing.py` | Transformasi train vs validasi/test |
 | `src/lesioscan/data.py` | Dataset, DataLoader, patient-level split dan validasi metadata |
@@ -109,3 +113,28 @@ python scripts/export_onnx.py --checkpoint outputs/runs/shufflenet_v2_x1_0/best.
 - Softmax bukan probabilitas medis, dan prediksi pada foto di luar distribusi training tidak bisa diandalkan.
 
 Dataset: https://data.mendeley.com/datasets/zr7vgbcyr2/1
+
+
+## Persiapan penilaian rubrik
+
+- **Perumusan masalah:** `docs/01_problem_formulation.md`.
+- **EDA:** `notebooks/01_exploratory_data_analysis.ipynb` dan `scripts/eda.py`.
+- **Split kelas-aware berdasarkan pasien:** `src/lesioscan/splitting.py`, `scripts/prepare.py` (mencari kandidat group split dengan cakupan kelas). Bukan jaminan stratifikasi sempurna.
+- **Benchmark:** `python scripts/benchmark.py` (membandingkan **validation metrics**, tidak pernah memilih berdasarkan test).
+- **Grafik training:** `python scripts/plot_training.py --history outputs/runs/<run>/history.json`.
+- **Grafik evaluasi:** `python scripts/visualize_evaluation.py --metrics outputs/runs/<run>/val_metrics.json`.
+- **Inference eksperimen:** `python scripts/predict.py --checkpoint outputs/runs/<run>/best.pt --image <path_gambar>`. **Hanya penelitian, bukan diagnosis.**
+- **Benchmark latency:** `python scripts/benchmark_inference.py --checkpoint outputs/runs/<run>/best.pt --device cpu`.
+- **Dokumentasi metodologi:** `docs/04_model_evaluation.md`, `docs/05_experiment_protocol.md`, `docs/06_eda_interpretation.md`.
+
+Seluruh script evaluasi dan benchmark memerlukan output training yang **belum tersedia** sebelum dataset diunduh, disiapkan, dan model dilatih.
+
+## Tahap Data Cleaning (sebelum data split)
+
+1. Simpan metadata asli di `data/metadata.csv` dan gambar asli di `data/images/` setelah staging dari Google Drive. Jangan ubah data asli.
+2. Jalankan `python scripts/eda.py` untuk melihat karakteristik dan masalah data.
+3. Jalankan `python scripts/clean.py`; outputnya `data/metadata_clean.csv`, `outputs/cleaning/cleaning_issues.csv`, dan `outputs/cleaning/cleaning_summary.json`.
+4. **Tinjau laporan cleaning**: kolom wajib kosong, label tidak dikenal, konflik image ID, duplikasi, gambar hilang/rusak, dan path tidak aman. Baris bermasalah dikarantina; kode **tidak mengarang label klinis** atau memperbaiki gambar otomatis.
+5. Bila temuan sudah ditinjau, jalankan `python scripts/prepare.py`. Script ini membaca **metadata_clean.csv**. Simpan laporan dan split ke Google Drive.
+
+Cleaning *bukan* augmentation maupun normalisasi. Transformasi training (resize, normalisasi ImageNet, augmentation) dilakukan setelah splitting, sehingga tidak menyebabkan kebocoran data. Ambiguitas label memerlukan peninjauan manual berdasarkan sumber terpercaya.

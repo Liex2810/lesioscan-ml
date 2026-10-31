@@ -1,18 +1,20 @@
 seed: 42
 data:
-  csv: data/metadata.csv
+  raw_csv: data/metadata.csv
+  csv: data/metadata_clean.csv
   images: data/images
   split: data/split.csv
   image_column: img_id
   patient_column: patient_id
   label_column: diagnostic
+  split_candidates: 150  # select a class-balanced, patient-disjoint candidate
   holdout_fraction: 0.15
   validation_fraction: 0.15
   image_size: 224
 labels: [ACK, BCC, MEL, NEV, SCC, SEK]
 train:
   batch_size: 8
-  num_workers: 0  # Windows-safe initial setting; increase after testing
+  num_workers: 2  # Colab initial setting; use 0 if worker errors
   stage1_epochs: 5
   stage2_epochs: 20
   head_lr: 0.001

@@ -11,3 +11,9 @@ deployment/*.onnx
 *.pt
 *.ckpt
 .env
+
+# Hasil data cleaning dan laporan yang mungkin memuat metadata sensitif
+data/metadata_clean.csv
+data/metadata.csv
+data/split.csv
+outputs/
