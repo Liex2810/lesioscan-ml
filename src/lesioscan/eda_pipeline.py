@@ -68,7 +68,19 @@ def run_eda(metadata, images_root, output, full_image_scan=False, sample_per_cla
     resolution_path=tables/'image_resolution.csv'
     if full_image_scan or not resolution_path.exists():
         records=[];errors=[]
-        for name,path in tqdm(paths.items(),desc='Membaca dimensi gambar'):
+        for name, path in tqdm(
+    paths.items(),
+    total=len(paths),
+    desc="LesioScan | Image Resolution",
+    unit="gambar",
+    dynamic_ncols=True,
+    mininterval=0.5,
+    bar_format=(
+        "{desc}: {percentage:3.0f}% |{bar}| "
+        "{n_fmt}/{total_fmt} gambar "
+        "[{elapsed}<{remaining}]"
+    )
+):
             try:
                 with Image.open(path) as im:width,height=im.size
                 records.append({'img_id':name,'width':width,'height':height,'aspect_ratio':width/height,'megapixels':width*height/1e6})
