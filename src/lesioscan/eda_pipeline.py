@@ -7,7 +7,7 @@ import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 from PIL import Image
-from tqdm.auto import tqdm
+from tqdm import tqdm
 from .data_paths import index_images
 
 CLASSES = ['ACK','BCC','MEL','NEV','SCC','SEK']
